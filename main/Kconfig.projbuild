@@ -1,0 +1,42 @@
+
+menu "WiFi TCP Configuration"
+
+    config DEVICE_NAME
+        string "Device Name"
+        default "Теплица помидорник"
+        help
+            Имя устройства для передачи на сервер
+            
+    config WIFI_SSID
+        string "WiFi SSID"
+        default "ESP32_S3_Display"
+        help
+            SSID of the WiFi network to connect to.
+
+    config WIFI_PASSWORD
+        string "WiFi Password"
+        default "12345678"
+        help
+            Password for the WiFi network.
+
+    config TCP_SERVER_IP
+        string "TCP Server IP"
+        default "192.168.4.1"
+        help
+            IP address of the TCP server.
+
+    config TCP_SERVER_PORT
+        int "TCP Server Port"
+        default 8888
+        range 1 65535
+        help
+            Port of the TCP server.
+
+    config SENSOR_READ_INTERVAL_SEC
+        int "Sensor read interval (seconds)"
+        default 10
+        range 1 3600
+        help
+            Interval between sensor readings in seconds.
+
+endmenu
