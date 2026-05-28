@@ -148,3 +148,38 @@ int tcp_send_data(const char *json_str)
     close(sock);
     return (sent >= 0) ? 0 : -1;
 }
+
+char* tcp_receive_data(void) {
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_addr.s_addr = inet_addr(CONFIG_TCP_SERVER_IP);
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(CONFIG_TCP_SERVER_PORT);
+
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        ESP_LOGE(TAG, "Unable to create socket");
+        return NULL;
+    }
+    int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+    if (err != 0) {
+        ESP_LOGE(TAG, "Socket connect failed");
+        close(sock);
+        return NULL;
+    }
+    char *buffer = malloc(256);
+    if (!buffer) {
+        close(sock);
+        return NULL;
+    }
+    memset(buffer, 0, 256);
+    int len = recv(sock, buffer, 255, 0);
+    if (len <= 0) {
+        free(buffer);
+        close(sock);
+        return NULL;
+    }
+    buffer[len] = '\0';
+    shutdown(sock, SHUT_RDWR);
+    close(sock);
+    return buffer;
+}

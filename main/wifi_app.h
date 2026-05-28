@@ -19,3 +19,4 @@
 void wifi_init_sta(void);
 bool wifi_is_connected(void);
 int tcp_send_data(const char *json_str);
+char* tcp_receive_data(void);

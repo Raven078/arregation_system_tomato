@@ -825,10 +825,8 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
-# WiFi TCP Configuration
+# WiFi Configuration
 #
-# default:
-CONFIG_DEVICE_NAME="Теплица помидорник"
 # default:
 CONFIG_WIFI_SSID="ESP32_S3_Display"
 # default:
@@ -839,7 +837,13 @@ CONFIG_TCP_SERVER_IP="192.168.4.1"
 CONFIG_TCP_SERVER_PORT=8888
 # default:
 CONFIG_SENSOR_READ_INTERVAL_SEC=10
-# end of WiFi TCP Configuration
+# default:
+CONFIG_DEVICE_NAME="Теплица помидорник"
+# default:
+CONFIG_MOISTURE_THRESHOLD_PERCENT=60
+# default:
+CONFIG_LOG_SEND_INTERVAL_MIN=10
+# end of WiFi Configuration
 
 #
 # Compiler options
