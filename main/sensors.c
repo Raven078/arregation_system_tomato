@@ -1,6 +1,10 @@
 // main/sensors.c
 #include "sensors.h"
 
+// Определение калибровочных констант
+const int V_DRY_mV = CONFIG_DRY_MV;
+const int V_WET_mV = CONFIG_WET_MV;
+
 static const char *TAG = "Sensors";
 
 static adc_oneshot_unit_handle_t adc_handle = NULL;

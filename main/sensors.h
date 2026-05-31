@@ -22,8 +22,8 @@
 #define LEVEL_SENSOR_2_GPIO    GPIO_NUM_3
 
 // ==================== Калибровка датчика влажности ====================
-#define V_DRY_mV   2500
-#define V_WET_mV   1000
+extern const int V_DRY_mV;
+extern const int V_WET_mV;
 
 // ==================== Имя устройства ====================
 #ifdef CONFIG_DEVICE_NAME
