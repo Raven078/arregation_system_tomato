@@ -1,27 +1,46 @@
 #include "log_manager.h"
 #include "wifi_app.h"
+#include "file_logger.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "LogManager";
 static esp_timer_handle_t log_timer = NULL;
+static QueueHandle_t log_queue = NULL;
+static TaskHandle_t log_task_handle = NULL;
+
+typedef enum {
+    LOG_CMD_SEND_FILE
+} log_cmd_t;
+
+static void log_task(void *arg) {
+    log_cmd_t cmd;
+    while (1) {
+        if (xQueueReceive(log_queue, &cmd, portMAX_DELAY)) {
+            if (cmd == LOG_CMD_SEND_FILE) {
+                if (!wifi_is_connected()) {
+                    ESP_LOGW(TAG, "WiFi not connected, cannot send log");
+                    continue;
+                }
+                file_logger_send_file();  // здесь уже будут логи
+            }
+        }
+    }
+}
 
 static void send_log_callback(void *arg) {
-    if (!wifi_is_connected()) {
-        ESP_LOGW(TAG, "WiFi not connected, cannot send log");
-        return;
-    }
-    const char *log_msg = "LOG: periodic log entry";
-    if (tcp_send_data(log_msg) == 0) {
-        ESP_LOGI(TAG, "Log sent");
-    } else {
-        ESP_LOGE(TAG, "Failed to send log");
-    }
+    log_cmd_t cmd = LOG_CMD_SEND_FILE;
+    xQueueSend(log_queue, &cmd, 0);
 }
 
 void log_manager_init(void) {
     ESP_LOGI(TAG, "Log manager initialized");
+    log_queue = xQueueCreate(5, sizeof(log_cmd_t));
+    xTaskCreate(log_task, "log_task", 4096, NULL, 2, &log_task_handle);
 }
 
 void log_manager_start(void) {
@@ -36,5 +55,8 @@ void log_manager_start(void) {
 }
 
 void log_send_file(void) {
-    send_log_callback(NULL);
+    if (log_queue) {
+        log_cmd_t cmd = LOG_CMD_SEND_FILE;
+        xQueueSend(log_queue, &cmd, 0);
+    }
 }

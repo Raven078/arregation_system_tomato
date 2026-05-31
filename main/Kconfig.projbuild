@@ -3,7 +3,7 @@ menu "WiFi Configuration"
         string "WiFi SSID"
         default "ESP32_S3_Display"
         help 
-            SSID of the WiFi network to connect to.
+            SSID of the WiFi network.
 
     config WIFI_PASSWORD
         string "WiFi Password"
@@ -23,17 +23,11 @@ menu "WiFi Configuration"
         help 
             Port of the TCP server.
 
-    config SENSOR_READ_INTERVAL_SEC
-        int "Sensor read interval (seconds)"
-        default 10
-        help 
-            Interval between sensor readings in seconds.
-
     config DEVICE_NAME
         string "Device Name"
         default "Теплица помидорник"
         help 
-            Name of the device for identification
+            Name of the device.
 
     config MOISTURE_THRESHOLD_PERCENT
         int "Moisture threshold for pump activation (%)"
@@ -42,10 +36,50 @@ menu "WiFi Configuration"
         help 
             Soil moisture level below which the pump may be activated.
 
-    config LOG_SEND_INTERVAL_MIN
-        int "Log send interval (minutes)"
+    # Новые параметры
+    config DATA_SEND_INTERVAL_SEC
+        int "Send sensor data interval (seconds)"
+        default 60
+        range 10 3600
+        help 
+            How often to send sensor data to server (normal periodic send).
+
+    config SENSOR_READ_INTERVAL_SEC
+        int "Sensor read interval for averaging (seconds)"
         default 10
         range 1 60
         help 
+            How often to read sensors for logging and averaging.
+
+    config LOG_INTERVAL_MIN
+        int "Log to file interval (minutes)"
+        default 10
+        range 1 60
+        help 
+            Interval for averaging data and writing to log file.
+
+    config FLASH_MOUNT_POINT
+        string "Flash mount point"
+        default "/spiffs"
+        help 
+            Mount point for SPIFFS partition.
+
+     config LOG_SEND_INTERVAL_MIN
+        int "Log send interval (minutes)"
+        default 10
+        range 1 60
+        help
             Interval between sending log files in minutes.
+
+    config DRY_MV
+        int "Dry voltage (mV) for HW-390"
+        default 80
+        range 0 100
+
+    config WET_MV
+        int "Wet voltage (mV) for HW-390"
+        default 50
+        range 0 100
+
+    
 endmenu

@@ -4,6 +4,7 @@
 #include "esp_timer.h"
 #include <sys/time.h>
 #include <time.h>
+#include <string.h>
 #include "sdkconfig.h"
 
 static const char *TAG = "TimeManager";
@@ -19,19 +20,30 @@ bool time_sync_from_tcp(void) {
         ESP_LOGW(TAG, "WiFi not connected");
         return false;
     }
-    if (tcp_send_data("GET_TIME") != 0) {
-        ESP_LOGE(TAG, "Failed to send time request");
+    ESP_LOGI(TAG, "Requesting timestamp...");
+    if (tcp_send_data("GET_TIMESTAMP\n") != 0) {
+        ESP_LOGE(TAG, "Failed to send request");
         return false;
     }
     char *resp = tcp_receive_data();
     if (!resp) {
-        ESP_LOGE(TAG, "No response for time");
+        ESP_LOGE(TAG, "No response");
         return false;
     }
-    long long seconds = atoll(resp);
+    ESP_LOGI(TAG, "Received: '%s'", resp);
+    long long seconds = 0;
+    // Пытаемся найти префикс "TIMESTAMP:"
+    const char *prefix = "TIMESTAMP:";
+    char *colon = strstr(resp, prefix);
+    if (colon) {
+        seconds = atoll(colon + strlen(prefix));
+    } else {
+        // Если префикса нет, пробуем преобразовать всю строку
+        seconds = atoll(resp);
+    }
     free(resp);
     if (seconds <= 0) {
-        ESP_LOGE(TAG, "Invalid time value");
+        ESP_LOGE(TAG, "Invalid timestamp");
         return false;
     }
     struct timeval tv = { .tv_sec = seconds, .tv_usec = 0 };
@@ -40,13 +52,13 @@ bool time_sync_from_tcp(void) {
         ESP_LOGI(TAG, "Time synchronized: %s", ctime(&now));
         return true;
     }
+    ESP_LOGE(TAG, "Failed to set system time");
     return false;
 }
 
 void time_manager_init(void) {
-    ESP_LOGI(TAG, "Initializing time manager");
-    time_sync_from_tcp();
-
+    ESP_LOGI(TAG, "Init time manager");
+    // Ежедневная синхронизация в 23:59:50
     time_t now = time(NULL);
     struct tm *tm = localtime(&now);
     struct tm target = *tm;

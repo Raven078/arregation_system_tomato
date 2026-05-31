@@ -6,7 +6,7 @@ idf_component_register(
         time_manager.c
         motor_control.c
         irrigation_logic.c
-        log_manager.c
+        file_logger.c      # новый
     INCLUDE_DIRS "."
     REQUIRES 
         nvs_flash
@@ -21,4 +21,5 @@ idf_component_register(
         esp_adc
         esp_driver_gpio
         esp_driver_ledc
+        spiffs           # для файловой системы
 )

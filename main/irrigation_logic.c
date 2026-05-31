@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
+#include "file_logger.h"
 
 static const char *TAG = "Irrigation";
 static int threshold = CONFIG_MOISTURE_THRESHOLD_PERCENT;
@@ -31,6 +32,7 @@ void irrigation_logic_update(const sensor_data_t *data) {
             pump_active = true;
             ESP_LOGI(TAG, "Pump started (moist=%d%%, hour=%d, level1=%d)",
                      data->moisture_percent, hour, data->level1);
+            file_logger_log_event("on", "pump");
         }
     } else {
         if (data->level1 == 0) {
@@ -46,6 +48,7 @@ void irrigation_logic_update(const sensor_data_t *data) {
             motor_valve_open();
             valve_active = true;
             ESP_LOGI(TAG, "Valve opened (10 sec after pump stop)");
+            file_logger_log_event("off", "pump");
         }
     }
     if (valve_active && data->level2 == 1) {
