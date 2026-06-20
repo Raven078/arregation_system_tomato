@@ -33,7 +33,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 6.1.0
+    version: 6.2.0
 direct_dependencies:
 - espressif/cjson
 - espressif/ds18b20

@@ -1,4 +1,3 @@
-// main/sensors.h
 #pragma once
 
 #include <stdio.h>
@@ -15,24 +14,20 @@
 #include "cJSON.h"
 #include "sdkconfig.h"
 
-// ==================== Конфигурация пинов ====================
 #define HW390_GPIO             GPIO_NUM_1
 #define ONE_WIRE_GPIO          GPIO_NUM_0
 #define LEVEL_SENSOR_1_GPIO    GPIO_NUM_2
 #define LEVEL_SENSOR_2_GPIO    GPIO_NUM_3
 
-// ==================== Калибровка датчика влажности ====================
 extern const int V_DRY_mV;
 extern const int V_WET_mV;
 
-// ==================== Имя устройства ====================
 #ifdef CONFIG_DEVICE_NAME
     #define DEVICE_NAME CONFIG_DEVICE_NAME
 #else
-    #define DEVICE_NAME "Теплица помидорник"
+    #define DEVICE_NAME "pomodoro"
 #endif
 
-// ==================== Структура для данных датчиков ====================
 typedef struct {
     int moisture_percent;
     int raw_adc;
@@ -42,7 +37,6 @@ typedef struct {
     int level2;
 } sensor_data_t;
 
-// ==================== Прототипы функций ====================
 void sensors_init(void);
 sensor_data_t sensors_read(void);
 char* sensors_create_json(const sensor_data_t *data, const char *device_name, const char *device_id);

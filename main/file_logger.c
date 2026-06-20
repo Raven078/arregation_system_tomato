@@ -7,12 +7,16 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "lwip/sockets.h"
+#include "lwip/netdb.h"
 #include <time.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include "sdkconfig.h"
 
 static const char *TAG = "FileLogger";
-static char current_filename[64];  // увеличен для более длинного имени
+static char current_filename[64];
 static float moisture_sum = 0;
 static float temp_sum = 0;
 static int readings_count = 0;
@@ -26,8 +30,13 @@ typedef enum {
     LOGGER_CMD_RESTART
 } logger_cmd_t;
 
+#define SERVER_IP CONFIG_TCP_SERVER_IP
+#define SERVER_PORT CONFIG_TCP_SERVER_PORT
+#define DEVICE_NAME CONFIG_DEVICE_NAME
+
 static void get_filename_for_date(struct tm *date, char *buf, size_t bufsize) {
-    snprintf(buf, bufsize, "/spiffs/pomodoro_%02d_%02d_%04d.txt",
+    snprintf(buf, bufsize, "/spiffs/%s_%02d_%02d_%04d.txt",
+             DEVICE_NAME,
              date->tm_mday, date->tm_mon + 1, date->tm_year + 1900);
 }
 
@@ -42,25 +51,64 @@ static void send_file(const char *filename) {
         ESP_LOGW(TAG, "WiFi not connected, cannot send file");
         return;
     }
+
     FILE *f = fopen(filename, "r");
     if (!f) {
         ESP_LOGW(TAG, "File %s not found", filename);
         return;
     }
-    char line[256];
-    int lines = 0;
-    while (fgets(line, sizeof(line), f)) {
-        line[strcspn(line, "\n")] = 0;
-        if (tcp_send_data(line) == 0) {
-            lines++;
-        } else {
-            ESP_LOGE(TAG, "Failed to send line");
+
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    time_t now = time(NULL);
+    struct tm *tm = localtime(&now);
+    char date_str[32];
+    strftime(date_str, sizeof(date_str), "%d_%m_%Y", tm);
+
+    char header[128];
+    snprintf(header, sizeof(header), "FILE:%s:%s:%ld\n", DEVICE_NAME, date_str, file_size);
+
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        ESP_LOGE(TAG, "Socket creation failed");
+        fclose(f);
+        return;
+    }
+
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(SERVER_PORT);
+
+    if (connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) != 0) {
+        ESP_LOGE(TAG, "Connection to server failed");
+        close(sock);
+        fclose(f);
+        return;
+    }
+
+    if (send(sock, header, strlen(header), 0) < 0) {
+        ESP_LOGE(TAG, "Failed to send header");
+        close(sock);
+        fclose(f);
+        return;
+    }
+
+    char buffer[1024];
+    size_t bytes_read;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), f)) > 0) {
+        if (send(sock, buffer, bytes_read, 0) < 0) {
+            ESP_LOGE(TAG, "Failed to send file data");
             break;
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
+
     fclose(f);
-    ESP_LOGI(TAG, "Sent %d lines from %s", lines, filename);
+    shutdown(sock, 0);
+    close(sock);
+    ESP_LOGI(TAG, "File %s sent (%ld bytes)", filename, file_size);
 }
 
 static void delete_file(const char *filename) {
@@ -94,7 +142,6 @@ void file_logger_check_new_day(void) {
     struct tm *tm = localtime(&now);
     get_filename_for_date(tm, new_filename, sizeof(new_filename));
     if (strcmp(new_filename, current_filename) != 0) {
-        // Если старый файл существует – отправляем и удаляем
         FILE *old = fopen(current_filename, "r");
         if (old != NULL) {
             fclose(old);
@@ -132,7 +179,8 @@ static void add_sensor_reading_and_send(void) {
         struct tm *tm = localtime(&now);
         char time_str[20];
         strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm);
-        fprintf(f, "%s;%.1f;%.2f;%d;%d\n", time_str, avg_moisture, avg_temp, data.level1, data.level2);
+        fprintf(f, "%s;%s;%.1f;%.2f;%d;%d\n",
+                DEVICE_NAME, time_str, avg_moisture, avg_temp, data.level1, data.level2);
         fclose(f);
         ESP_LOGI(TAG, "10-min record added: %.1f%%, %.2f°C", avg_moisture, avg_temp);
         send_file(current_filename);
@@ -234,7 +282,7 @@ void file_logger_log_event(const char *state, const char *device) {
     struct tm *tm = localtime(&now);
     char time_str[20];
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm);
-    fprintf(f, "%s;EVENT;%s;%s\n", time_str, device, state);
+    fprintf(f, "%s;%s;EVENT;%s;%s\n", DEVICE_NAME, time_str, device, state);
     fclose(f);
     ESP_LOGI(TAG, "Event: %s %s", device, state);
 }
