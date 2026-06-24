@@ -146,3 +146,38 @@ menu "Irrigation Control Configuration"
             Time to wait before sending level change events to avoid false triggers.
 
 endmenu
+
+menu "BLE Configuration"
+    config BLE_ENABLE
+        bool "Enable Bluetooth LE (BLE) for monitoring and OTA"
+        default n
+        help
+            If enabled, ESP32-C3 will act as a BLE peripheral with UART service.
+            You can connect from a computer/phone to receive logs and send OTA firmware.
+
+    config BLE_DEVICE_NAME
+        string "BLE Device Name"
+        depends on BLE_ENABLE
+        default "Irrigation_Node"
+        help
+            Name of the BLE device as seen during scanning.
+
+endmenu
+
+menu "Remote Control Configuration"
+
+    config LOG_STREAM_PORT
+        int "TCP port for log streaming"
+        default 8890
+        range 1024 65535
+        help
+            Port on which the lower device will send logs in real-time.
+
+    config OTA_RECOVERY_PORT
+        int "TCP port for OTA recovery server"
+        default 8891
+        range 1024 65535
+        help
+            Port on which the lower device will listen for firmware updates in recovery mode.
+
+endmenu

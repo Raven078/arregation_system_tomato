@@ -4,6 +4,8 @@
 #include "sensors.h"
 #include "irrigation_logic.h"
 #include "file_logger.h"
+#include "log_stream.h"
+#include "ota_recovery.h"
 #include "esp_log.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
@@ -14,7 +16,6 @@
 static const char *TAG = "CMD_SERVER";
 #define COMMAND_PORT CONFIG_COMMAND_PORT
 #define MAX_CLIENTS 1
-#define DEVICE_NAME CONFIG_DEVICE_NAME
 
 static void handle_command(int sock) {
     char rx_buffer[64];
@@ -26,11 +27,12 @@ static void handle_command(int sock) {
     ESP_LOGI(TAG, "Received command: %s", rx_buffer);
     const char *response = "OK\n";
 
+    // --- Команды управления ---
     if (strcmp(rx_buffer, "pump_on") == 0) {
         sensor_data_t data = sensors_read();
         if (data.level2 != 1) {
             ESP_LOGW(TAG, "Cannot turn pump ON: no water (level2=%d)", data.level2);
-            file_logger_log_event(DEVICE_NAME, "pump", "off");
+            file_logger_log_event(CONFIG_DEVICE_NAME, "pump", "off");
             response = "ERROR: No water\n";
         } else {
             motor_pump_start();
@@ -50,7 +52,7 @@ static void handle_command(int sock) {
         sensor_data_t data = sensors_read();
         if (data.level1 == 1) {
             ESP_LOGW(TAG, "Cannot open valve: upper level detected (level1=1)");
-            file_logger_log_event(DEVICE_NAME, "valve", "off");
+            file_logger_log_event(CONFIG_DEVICE_NAME, "valve", "off");
             response = "ERROR: Tank full\n";
         } else {
             motor_valve_open();
@@ -79,6 +81,12 @@ static void handle_command(int sock) {
     } else if (strcmp(rx_buffer, "stop_data") == 0) {
         data_sender_stop_data();
         response = "DATA_STOPPED\n";
+    } else if (strcmp(rx_buffer, "start_log_stream") == 0) {
+        log_stream_set_enabled(true, sock);
+        response = "OK\n";
+    } else if (strcmp(rx_buffer, "stop_log_stream") == 0) {
+        log_stream_set_enabled(false, -1);
+        response = "OK\n";
     } else {
         response = "ERROR: unknown command\n";
         ESP_LOGW(TAG, "Unknown command: %s", rx_buffer);

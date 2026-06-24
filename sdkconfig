@@ -869,6 +869,21 @@ CONFIG_LEVEL_DEBOUNCE_DELAY=5
 # end of Irrigation Control Configuration
 
 #
+# BLE Configuration
+#
+# CONFIG_BLE_ENABLE is not set
+# end of BLE Configuration
+
+#
+# Remote Control Configuration
+#
+# default:
+CONFIG_LOG_STREAM_PORT=8890
+# default:
+CONFIG_OTA_RECOVERY_PORT=8891
+# end of Remote Control Configuration
+
+#
 # Compiler options
 #
 # default:
@@ -952,7 +967,6 @@ CONFIG_COMPILER_CXX_GLIBCXX_CONSTEXPR_NO_CHANGE=y
 #
 # Bluetooth
 #
-# default:
 # CONFIG_BT_ENABLED is not set
 
 #

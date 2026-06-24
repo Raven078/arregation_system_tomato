@@ -202,18 +202,16 @@ void file_logger_rotate_logs_if_needed(const char *greenhouse) {
     struct tm tm_now;
     localtime_r(&now, &tm_now);
 
-    // Проверяем, изменился ли день
     if (last_rotation_time != 0) {
         struct tm tm_last;
         localtime_r(&last_rotation_time, &tm_last);
         if (tm_now.tm_mday == tm_last.tm_mday &&
             tm_now.tm_mon == tm_last.tm_mon &&
             tm_now.tm_year == tm_last.tm_year) {
-            return; // день не изменился
+            return;
         }
     }
 
-    // День изменился – удаляем все старые txt файлы
     DIR *dir = opendir(BASE_PATH);
     if (dir) {
         struct dirent *entry;
@@ -232,7 +230,6 @@ void file_logger_rotate_logs_if_needed(const char *greenhouse) {
         closedir(dir);
     }
 
-    // Обновляем время последней ротации
     last_rotation_time = now;
     ESP_LOGI(TAG, "Log rotation completed for device %s", dev);
 }
@@ -354,12 +351,14 @@ void file_logger_append_data(const char *greenhouse, float temperature, int mois
     strftime(time_str, sizeof(time_str), "%H:%M:%S", &tm_info);
     char date_str[11];
     strftime(date_str, sizeof(date_str), "%Y-%m-%d", &tm_info);
-    fprintf(f, "%s;%s %s;%.1f;%.1f;%d;%d\n",
-            dev, date_str, time_str,
-            (float)moisture,
-            temperature,
-            pump_state ? 1 : 0,
-            valve_state ? 1 : 0);
+    char log_line[256];
+    snprintf(log_line, sizeof(log_line), "%s;%s %s;%.1f;%.1f;%d;%d\n",
+             dev, date_str, time_str,
+             (float)moisture,
+             temperature,
+             pump_state ? 1 : 0,
+             valve_state ? 1 : 0);
+    fprintf(f, "%s", log_line);
     fclose(f);
     ESP_LOGD(TAG, "Appended data to %s", filename);
 }
@@ -381,8 +380,10 @@ void file_logger_log_event(const char *greenhouse, const char *component, const 
     strftime(time_str, sizeof(time_str), "%H:%M:%S", &tm_info);
     char date_str[11];
     strftime(date_str, sizeof(date_str), "%Y-%m-%d", &tm_info);
-    fprintf(f, "%s;%s %s;EVENT;%s;%s\n",
-            dev, date_str, time_str, component, state);
+    char log_line[128];
+    snprintf(log_line, sizeof(log_line), "%s;%s %s;EVENT;%s;%s\n",
+             dev, date_str, time_str, component, state);
+    fprintf(f, "%s", log_line);
     fclose(f);
     ESP_LOGD(TAG, "Event logged: %s %s %s", dev, component, state);
 }

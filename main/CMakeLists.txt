@@ -10,6 +10,8 @@ idf_component_register(
         command_server.c
         data_sender.c
         button.c
+        log_stream.c
+        ota_recovery.c
     INCLUDE_DIRS "."
     REQUIRES 
         nvs_flash
@@ -27,4 +29,6 @@ idf_component_register(
         spiffs
         esp_hw_support
         esp_system
+        app_update
+        nvs_flash
 )
