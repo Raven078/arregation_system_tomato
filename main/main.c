@@ -4,19 +4,26 @@
 #include "esp_system.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "sensors.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_netif.h"
+#include "esp_sntp.h"
+#include "time.h"
+#include "command_server.h"
 #include "wifi_app.h"
-#include "time_manager.h"
+#include "sensors.h"
+#include "motor_control.h"
 #include "irrigation_logic.h"
 #include "file_logger.h"
-#include "motor_control.h"
-#include "command_server.h"
+#include "time_manager.h"
 #include "data_sender.h"
-#include "sdkconfig.h"
+#include "button.h"
 
 static const char *TAG = "Main";
 
 void app_main(void) {
+    ESP_LOGI(TAG, "Starting application");
+
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -25,45 +32,23 @@ void app_main(void) {
     ESP_ERROR_CHECK(ret);
 
     sensors_init();
+    motor_control_init();
     wifi_init_sta();
-    irrigation_logic_init();
     file_logger_init();
-
-    ESP_LOGI(TAG, "Device: %s", CONFIG_DEVICE_NAME);
-
-    int wait = 0;
-    while (!wifi_is_connected() && wait < 30) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        wait++;
-    }
-
-    if (wifi_is_connected()) {
-        ESP_LOGI(TAG, "WiFi connected, syncing time...");
-        if (time_sync_from_tcp()) {
-            file_logger_check_new_day();
-            file_logger_restart_timer();
-        }
-    } else {
-        ESP_LOGW(TAG, "WiFi not connected, time will be synced later");
-    }
     time_manager_init();
+    irrigation_logic_init();
+    button_init();
+    data_sender_init();   // инициализация отправки данных и файлового таймера
+
+    // Убираем вызов data_sender_send_log_file() здесь — он будет вызван из wifi_app.c после получения времени
 
     command_server_start();
-    data_sender_init();   // data_requested = false
 
-    // НЕ отправляем данные для регистрации – сервер получит их только по команде send_data
-    // data_sender_send_registration();  // удалено
+    ESP_LOGI(TAG, "System ready, waiting for commands...");
 
     while (1) {
         sensor_data_t data = sensors_read();
-        data_sender_accumulate(data.moisture_percent, data.temperature);
-        file_logger_accumulate(data.moisture_percent, data.temperature);
-
-        bool pump_running = is_pump_running();
-        bool valve_open = is_valve_open();
-
-        data_sender_check_events(data.level1, data.level2, pump_running, valve_open);
-
+        irrigation_logic_update(&data);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

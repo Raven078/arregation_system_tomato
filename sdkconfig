@@ -825,12 +825,48 @@ CONFIG_TCP_SERVER_PORT=8888
 CONFIG_DEVICE_NAME="pomodoro"
 # default:
 CONFIG_COMMAND_PORT=8889
-# default:
-CONFIG_MOISTURE_THRESHOLD_PERCENT=60
-# default:
-CONFIG_DRY_MV=100
-CONFIG_WET_MV=80
 # end of Client Configuration
+
+#
+# Motor Control Configuration
+#
+CONFIG_PUMP_PWM_GPIO=6
+# default:
+CONFIG_PUMP_IN1_GPIO=7
+CONFIG_VALVE_GPIO=4
+# end of Motor Control Configuration
+
+#
+# Button Configuration
+#
+CONFIG_BUTTON_GPIO=10
+# end of Button Configuration
+
+#
+# calibration of humidity sensors
+#
+CONFIG_DRY_MV=2785
+CONFIG_WET_MV=1500
+# end of calibration of humidity sensors
+
+#
+# Irrigation Control Configuration
+#
+# default:
+CONFIG_MOISTURE_THRESHOLD=70
+# default:
+CONFIG_PUMP_START_HOUR=7
+# default:
+CONFIG_PUMP_END_HOUR=11
+# default:
+CONFIG_PUMP_STOP_DELAY_AFTER_NO_WATER=10
+# default:
+CONFIG_MAX_PUMP_RUN_TIME=10
+# default:
+CONFIG_VALVE_OPEN_DELAY_AFTER_PUMP_STOP=30
+# default:
+CONFIG_LEVEL_DEBOUNCE_DELAY=5
+# end of Irrigation Control Configuration
 
 #
 # Compiler options

@@ -1,299 +1,388 @@
 #include "file_logger.h"
-#include "sensors.h"
-#include "wifi_app.h"
 #include "esp_log.h"
 #include "esp_spiffs.h"
-#include "esp_timer.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
-#include "lwip/sockets.h"
-#include "lwip/netdb.h"
-#include <time.h>
 #include <string.h>
-#include <unistd.h>
+#include <stdlib.h>
+#include <time.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <errno.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdint.h>
 #include "sdkconfig.h"
 
-static const char *TAG = "FileLogger";
-static char current_filename[64];
-static float moisture_sum = 0;
-static float temp_sum = 0;
-static int readings_count = 0;
-static QueueHandle_t logger_queue = NULL;
-static TaskHandle_t logger_task_handle = NULL;
-static esp_timer_handle_t log_timer = NULL;
-static bool time_synced_flag = false;
+static const char *TAG = "FILE_LOGGER";
+static const char *BASE_PATH = "/spiffs";
 
-typedef enum {
-    LOGGER_CMD_ADD_RECORD,
-    LOGGER_CMD_RESTART
-} logger_cmd_t;
+#define CHART_POINTS 144
+static int32_t chart_temp[CHART_POINTS] = {0};
+static int32_t chart_humi[CHART_POINTS] = {0};
+static int32_t chart_pump[CHART_POINTS] = {0};
+static int32_t chart_valve[CHART_POINTS] = {0};
+static int chart_point_count = 0;
 
-#define SERVER_IP CONFIG_TCP_SERVER_IP
-#define SERVER_PORT CONFIG_TCP_SERVER_PORT
-#define DEVICE_NAME CONFIG_DEVICE_NAME
+static time_t last_rotation_time = 0;
 
-static void get_filename_for_date(struct tm *date, char *buf, size_t bufsize) {
-    snprintf(buf, bufsize, "/spiffs/%s_%02d_%02d_%04d.txt",
-             DEVICE_NAME,
-             date->tm_mday, date->tm_mon + 1, date->tm_year + 1900);
-}
-
-static void update_filename(void) {
-    time_t now = time(NULL);
-    struct tm *tm = localtime(&now);
-    get_filename_for_date(tm, current_filename, sizeof(current_filename));
-}
-
-static void send_file(const char *filename) {
-    if (!wifi_is_connected()) {
-        ESP_LOGW(TAG, "WiFi not connected, cannot send file");
-        return;
-    }
-
-    FILE *f = fopen(filename, "r");
-    if (!f) {
-        ESP_LOGW(TAG, "File %s not found", filename);
-        return;
-    }
-
-    fseek(f, 0, SEEK_END);
-    long file_size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    time_t now = time(NULL);
-    struct tm *tm = localtime(&now);
-    char date_str[32];
-    strftime(date_str, sizeof(date_str), "%d_%m_%Y", tm);
-
-    char header[128];
-    snprintf(header, sizeof(header), "FILE:%s:%s:%ld\n", DEVICE_NAME, date_str, file_size);
-
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        ESP_LOGE(TAG, "Socket creation failed");
-        fclose(f);
-        return;
-    }
-
-    struct sockaddr_in dest_addr;
-    dest_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(SERVER_PORT);
-
-    if (connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) != 0) {
-        ESP_LOGE(TAG, "Connection to server failed");
-        close(sock);
-        fclose(f);
-        return;
-    }
-
-    if (send(sock, header, strlen(header), 0) < 0) {
-        ESP_LOGE(TAG, "Failed to send header");
-        close(sock);
-        fclose(f);
-        return;
-    }
-
-    char buffer[1024];
-    size_t bytes_read;
-    while ((bytes_read = fread(buffer, 1, sizeof(buffer), f)) > 0) {
-        if (send(sock, buffer, bytes_read, 0) < 0) {
-            ESP_LOGE(TAG, "Failed to send file data");
-            break;
-        }
-    }
-
-    fclose(f);
-    shutdown(sock, 0);
-    close(sock);
-    ESP_LOGI(TAG, "File %s sent (%ld bytes)", filename, file_size);
-}
-
-static void delete_file(const char *filename) {
-    if (unlink(filename) == 0) {
-        ESP_LOGI(TAG, "Deleted %s", filename);
-    } else {
-        ESP_LOGE(TAG, "Failed to delete %s", filename);
-    }
-}
-
-static void print_file_content(const char *filename) {
-    FILE *f = fopen(filename, "r");
-    if (!f) {
-        ESP_LOGE(TAG, "Cannot open %s for reading", filename);
-        return;
-    }
-    char line[256];
-    ESP_LOGI(TAG, "===== Content of %s =====", filename);
-    while (fgets(line, sizeof(line), f)) {
-        line[strcspn(line, "\n")] = 0;
-        ESP_LOGI(TAG, "%s", line);
-    }
-    fclose(f);
-    ESP_LOGI(TAG, "===== End of file =====");
-}
-
-void file_logger_check_new_day(void) {
-    if (!time_synced_flag) return;
-    char new_filename[64];
-    time_t now = time(NULL);
-    struct tm *tm = localtime(&now);
-    get_filename_for_date(tm, new_filename, sizeof(new_filename));
-    if (strcmp(new_filename, current_filename) != 0) {
-        FILE *old = fopen(current_filename, "r");
-        if (old != NULL) {
-            fclose(old);
-            ESP_LOGI(TAG, "Sending and deleting previous day file %s", current_filename);
-            send_file(current_filename);
-            print_file_content(current_filename);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            delete_file(current_filename);
-        } else {
-            ESP_LOGI(TAG, "Old file %s does not exist, skipping", current_filename);
-        }
-        strcpy(current_filename, new_filename);
-        ESP_LOGI(TAG, "Switched to new log file: %s", current_filename);
-        moisture_sum = 0;
-        temp_sum = 0;
-        readings_count = 0;
-    }
-}
-
-static void add_sensor_reading_and_send(void) {
-    if (!time_synced_flag) {
-        ESP_LOGW(TAG, "Time not synced yet, skipping 10-min record");
-        return;
-    }
-    if (readings_count == 0) {
-        ESP_LOGW(TAG, "No readings accumulated for 10-min record");
-        return;
-    }
-    float avg_moisture = moisture_sum / readings_count;
-    float avg_temp = temp_sum / readings_count;
-    sensor_data_t data = sensors_read();
-    FILE *f = fopen(current_filename, "a");
-    if (f) {
-        time_t now = time(NULL);
-        struct tm *tm = localtime(&now);
-        char time_str[20];
-        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm);
-        fprintf(f, "%s;%s;%.1f;%.2f;%d;%d\n",
-                DEVICE_NAME, time_str, avg_moisture, avg_temp, data.level1, data.level2);
-        fclose(f);
-        ESP_LOGI(TAG, "10-min record added: %.1f%%, %.2f°C", avg_moisture, avg_temp);
-        send_file(current_filename);
-        print_file_content(current_filename);
-    } else {
-        ESP_LOGE(TAG, "Cannot open %s", current_filename);
-    }
-    moisture_sum = 0;
-    temp_sum = 0;
-    readings_count = 0;
-}
-
-static void schedule_next_record(void) {
-    if (!time_synced_flag) return;
-    time_t now = time(NULL);
-    struct tm *tm = localtime(&now);
-    int minutes = tm->tm_min;
-    int next_minute = ((minutes / 10) + 1) * 10;
-    int sec_to_next = (next_minute - minutes) * 60 - tm->tm_sec;
-    if (sec_to_next <= 0) sec_to_next += 600;
-    int64_t delay_us = sec_to_next * 1000000LL;
-    esp_timer_stop(log_timer);
-    esp_timer_start_once(log_timer, delay_us);
-    int next_hour = tm->tm_hour;
-    int next_min = next_minute;
-    if (next_min >= 60) {
-        next_hour += next_min / 60;
-        next_min %= 60;
-    }
-    if (next_hour >= 24) next_hour -= 24;
-    ESP_LOGI(TAG, "Next 10-min record scheduled in %d seconds (at %02d:%02d:00)",
-             sec_to_next, next_hour, next_min);
-}
-
-static void log_timer_callback(void *arg) {
-    logger_cmd_t cmd = LOGGER_CMD_ADD_RECORD;
-    xQueueSend(logger_queue, &cmd, 0);
-}
-
-static void logger_task(void *arg) {
-    logger_cmd_t cmd;
-    while (1) {
-        if (xQueueReceive(logger_queue, &cmd, portMAX_DELAY)) {
-            if (cmd == LOGGER_CMD_ADD_RECORD) {
-                add_sensor_reading_and_send();
-                file_logger_check_new_day();
-                schedule_next_record();
-            } else if (cmd == LOGGER_CMD_RESTART) {
-                time_synced_flag = true;
-                update_filename();
-                ESP_LOGI(TAG, "Time synced, using log file: %s", current_filename);
-                schedule_next_record();
-            }
-        }
-    }
+static int time_to_index(const char *time_str) {
+    int hour, minute, second;
+    if (sscanf(time_str, "%d:%d:%d", &hour, &minute, &second) != 3) return -1;
+    int minutes_since_midnight = hour * 60 + minute;
+    int index = minutes_since_midnight / 10;
+    if (index < 0) index = 0;
+    if (index >= CHART_POINTS) index = CHART_POINTS - 1;
+    return index;
 }
 
 void file_logger_init(void) {
+    ESP_LOGI(TAG, "Initializing SPIFFS");
     esp_vfs_spiffs_conf_t conf = {
-        .base_path = "/spiffs",
+        .base_path = BASE_PATH,
         .partition_label = NULL,
         .max_files = 5,
         .format_if_mount_failed = true
     };
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "SPIFFS mount failed");
+        ESP_LOGE(TAG, "Failed to mount SPIFFS (%s)", esp_err_to_name(ret));
         return;
     }
-    ESP_LOGI(TAG, "File logger initialized, waiting for time sync");
-    logger_queue = xQueueCreate(5, sizeof(logger_cmd_t));
-    xTaskCreate(logger_task, "logger_task", 8192, NULL, 2, &logger_task_handle);
-    const esp_timer_create_args_t timer_args = {
-        .callback = log_timer_callback,
-        .name = "log_timer"
-    };
-    esp_timer_create(&timer_args, &log_timer);
-}
-
-void file_logger_restart_timer(void) {
-    if (logger_queue) {
-        logger_cmd_t cmd = LOGGER_CMD_RESTART;
-        xQueueSend(logger_queue, &cmd, 0);
+    size_t total = 0, used = 0;
+    ret = esp_spiffs_info(conf.partition_label, &total, &used);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to get SPIFFS info (%s)", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "SPIFFS mounted. Total: %d, Used: %d", total, used);
     }
+    last_rotation_time = time(NULL);
 }
 
-void file_logger_accumulate(float moisture, float temp) {
-    if (!time_synced_flag) return;
-    moisture_sum += moisture;
-    temp_sum += temp;
-    readings_count++;
-}
-
-void file_logger_log_event(const char *state, const char *device) {
-    if (!time_synced_flag) return;
-    FILE *f = fopen(current_filename, "a");
-    if (!f) return;
+bool file_logger_get_latest_data(const char* greenhouse,
+                                 float* temperature, int* moisture,
+                                 bool* sensor1_detected, bool* sensor2_detected) {
     time_t now = time(NULL);
-    struct tm *tm = localtime(&now);
-    char time_str[20];
-    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm);
-    fprintf(f, "%s;%s;EVENT;%s;%s\n", DEVICE_NAME, time_str, device, state);
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
+    char filename[64];
+    const char *dev = (greenhouse && strlen(greenhouse) > 0) ? greenhouse : CONFIG_DEVICE_NAME;
+    snprintf(filename, sizeof(filename), "/spiffs/%s_%d_%d_%d.txt",
+             dev, tm_info.tm_mday, tm_info.tm_mon + 1, tm_info.tm_year + 1900);
+    ESP_LOGD(TAG, "Reading log file: %s", filename);
+
+    FILE *f = fopen(filename, "r");
+    if (f == NULL) {
+        ESP_LOGW(TAG, "Log file not found: %s", filename);
+        return false;
+    }
+
+    char line[128];
+    char *last_valid_line = NULL;
+    while (fgets(line, sizeof(line), f) != NULL) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (strlen(line) > 0) {
+            if (last_valid_line) free(last_valid_line);
+            last_valid_line = malloc(strlen(line) + 1);
+            if (last_valid_line) strcpy(last_valid_line, line);
+        }
+    }
     fclose(f);
-    ESP_LOGI(TAG, "Event: %s %s", device, state);
+
+    if (last_valid_line == NULL) {
+        ESP_LOGW(TAG, "No data lines found in file");
+        return false;
+    }
+
+    char *saveptr;
+    char *token = strtok_r(last_valid_line, ";", &saveptr);
+    if (!token) { free(last_valid_line); return false; }
+    token = strtok_r(NULL, ";", &saveptr);
+    if (!token) { free(last_valid_line); return false; }
+    token = strtok_r(NULL, ";", &saveptr);
+    if (!token) { free(last_valid_line); return false; }
+    float moist = atof(token);
+    token = strtok_r(NULL, ";", &saveptr);
+    if (!token) { free(last_valid_line); return false; }
+    float temp = atof(token);
+    token = strtok_r(NULL, ";", &saveptr);
+    if (!token) { free(last_valid_line); return false; }
+    int s1 = atoi(token);
+    token = strtok_r(NULL, ";", &saveptr);
+    if (!token) { free(last_valid_line); return false; }
+    int s2 = atoi(token);
+
+    *moisture = (int)moist;
+    *temperature = temp;
+    *sensor1_detected = (s1 == 1);
+    *sensor2_detected = (s2 == 1);
+
+    free(last_valid_line);
+    return true;
 }
 
-void file_logger_send_file(void) {
-    if (!time_synced_flag) return;
-    send_file(current_filename);
-    print_file_content(current_filename);
+void file_logger_cleanup_old_logs(int days_keep) {
+    DIR *dir = opendir(BASE_PATH);
+    if (!dir) {
+        ESP_LOGE(TAG, "Failed to open directory %s: %s", BASE_PATH, strerror(errno));
+        return;
+    }
+
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        const char *name = entry->d_name;
+        if (strncmp(name, CONFIG_DEVICE_NAME, strlen(CONFIG_DEVICE_NAME)) != 0) continue;
+        size_t len = strlen(name);
+        if (len < 5 || strcmp(name + len - 4, ".txt") != 0) continue;
+
+        int day, month, year;
+        if (sscanf(name, CONFIG_DEVICE_NAME "_%d_%d_%d.txt", &day, &month, &year) != 3) {
+            ESP_LOGW(TAG, "Skipping file with unexpected name: %s", name);
+            continue;
+        }
+        if (year < 2000 || year > 2100) {
+            ESP_LOGW(TAG, "Invalid year in file name: %s", name);
+            continue;
+        }
+
+        struct tm tm_file = {
+            .tm_year = year - 1900,
+            .tm_mon = month - 1,
+            .tm_mday = day,
+            .tm_hour = 0,
+            .tm_min = 0,
+            .tm_sec = 0,
+            .tm_isdst = -1,
+        };
+        time_t file_time = mktime(&tm_file);
+        if (file_time == -1) {
+            ESP_LOGW(TAG, "Failed to convert file date for %s", name);
+            continue;
+        }
+
+        double diff_days = difftime(now, file_time) / (60 * 60 * 24);
+        if (diff_days > days_keep) {
+            char full_path[512];
+            int written = snprintf(full_path, sizeof(full_path), "%s/%s", BASE_PATH, name);
+            if (written >= (int)sizeof(full_path)) {
+                ESP_LOGW(TAG, "Path truncated: %s/%s", BASE_PATH, name);
+                continue;
+            }
+            if (unlink(full_path) == 0) {
+                ESP_LOGI(TAG, "Deleted old log file: %s (age %.1f days)", full_path, diff_days);
+            } else {
+                ESP_LOGE(TAG, "Failed to delete %s: %s", full_path, strerror(errno));
+            }
+        }
+    }
+    closedir(dir);
 }
 
-void file_logger_print_file(void) {
-    if (!time_synced_flag) return;
-    print_file_content(current_filename);
+bool file_logger_is_today_file_exists(const char *greenhouse) {
+    const char *dev = (greenhouse && strlen(greenhouse) > 0) ? greenhouse : CONFIG_DEVICE_NAME;
+    time_t now = time(NULL);
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
+    char filename[64];
+    snprintf(filename, sizeof(filename), "/spiffs/%s_%d_%d_%d.txt",
+             dev, tm_info.tm_mday, tm_info.tm_mon + 1, tm_info.tm_year + 1900);
+    FILE *f = fopen(filename, "r");
+    if (f) {
+        fclose(f);
+        return true;
+    }
+    return false;
+}
+
+void file_logger_rotate_logs_if_needed(const char *greenhouse) {
+    const char *dev = (greenhouse && strlen(greenhouse) > 0) ? greenhouse : CONFIG_DEVICE_NAME;
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+
+    // Проверяем, изменился ли день
+    if (last_rotation_time != 0) {
+        struct tm tm_last;
+        localtime_r(&last_rotation_time, &tm_last);
+        if (tm_now.tm_mday == tm_last.tm_mday &&
+            tm_now.tm_mon == tm_last.tm_mon &&
+            tm_now.tm_year == tm_last.tm_year) {
+            return; // день не изменился
+        }
+    }
+
+    // День изменился – удаляем все старые txt файлы
+    DIR *dir = opendir(BASE_PATH);
+    if (dir) {
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            const char *name = entry->d_name;
+            if (strncmp(name, dev, strlen(dev)) != 0) continue;
+            if (strstr(name, ".txt") == NULL) continue;
+            char full_path[512];
+            snprintf(full_path, sizeof(full_path), "%s/%s", BASE_PATH, name);
+            if (unlink(full_path) == 0) {
+                ESP_LOGI(TAG, "Deleted old log file during rotation: %s", full_path);
+            } else {
+                ESP_LOGE(TAG, "Failed to delete %s: %s", full_path, strerror(errno));
+            }
+        }
+        closedir(dir);
+    }
+
+    // Обновляем время последней ротации
+    last_rotation_time = now;
+    ESP_LOGI(TAG, "Log rotation completed for device %s", dev);
+}
+
+void file_logger_update_chart_data(void) {
+    time_t now = time(NULL);
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
+    char filename[64];
+    snprintf(filename, sizeof(filename), "/spiffs/%s_%d_%d_%d.txt",
+             CONFIG_DEVICE_NAME, tm_info.tm_mday, tm_info.tm_mon + 1, tm_info.tm_year + 1900);
+    file_logger_update_chart_data_from_file(filename);
+}
+
+void file_logger_update_chart_data_from_file(const char *filename) {
+    ESP_LOGI(TAG, "Updating chart data from file: %s", filename);
+
+    memset(chart_temp, 0, sizeof(chart_temp));
+    memset(chart_humi, 0, sizeof(chart_humi));
+    memset(chart_pump, 0, sizeof(chart_pump));
+    memset(chart_valve, 0, sizeof(chart_valve));
+    chart_point_count = 0;
+
+    FILE *f = fopen(filename, "r");
+    if (!f) {
+        ESP_LOGW(TAG, "File not found: %s", filename);
+        return;
+    }
+
+    char line[256];
+    bool pump_state = false;
+    bool valve_state = false;
+
+    while (fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (strlen(line) == 0) continue;
+
+        char *saveptr;
+        char *tokens[6];
+        int token_count = 0;
+        char *token = strtok_r(line, ";", &saveptr);
+        while (token && token_count < 6) {
+            tokens[token_count++] = token;
+            token = strtok_r(NULL, ";", &saveptr);
+        }
+        if (token_count < 3) continue;
+
+        if (strcmp(tokens[0], CONFIG_DEVICE_NAME) != 0) continue;
+
+        if (strcmp(tokens[2], "EVENT") == 0) {
+            if (token_count >= 5) {
+                if (strcmp(tokens[3], "pump") == 0) {
+                    pump_state = (strcmp(tokens[4], "on") == 0);
+                } else if (strcmp(tokens[3], "valve") == 0) {
+                    valve_state = (strcmp(tokens[4], "on") == 0);
+                }
+            }
+            continue;
+        }
+
+        if (token_count >= 6) {
+            char *space_pos = strchr(tokens[1], ' ');
+            if (!space_pos) continue;
+            char time_str[9];
+            strncpy(time_str, space_pos + 1, 8);
+            time_str[8] = '\0';
+
+            int idx = time_to_index(time_str);
+            if (idx < 0 || idx >= CHART_POINTS) continue;
+
+            float moisture = atof(tokens[2]);
+            float temperature = atof(tokens[3]);
+            int s1 = atoi(tokens[4]);
+            int s2 = atoi(tokens[5]);
+
+            chart_temp[idx] = (int32_t)(temperature * 10);
+            chart_humi[idx] = (int32_t)moisture;
+            chart_pump[idx] = pump_state ? 80 : 0;
+            chart_valve[idx] = valve_state ? 80 : 0;
+            chart_point_count++;
+        }
+    }
+
+    fclose(f);
+    ESP_LOGI(TAG, "Chart data updated: %d valid points", chart_point_count);
+}
+
+void file_logger_get_chart_data(int32_t **temp_array, int32_t **humi_array, int *point_count) {
+    *temp_array = chart_temp;
+    *humi_array = chart_humi;
+    *point_count = chart_point_count;
+}
+
+void file_logger_get_pump_valve_data(int32_t **pump_array, int32_t **valve_array, int *point_count) {
+    *pump_array = chart_pump;
+    *valve_array = chart_valve;
+    *point_count = chart_point_count;
+}
+
+void file_logger_append_data(const char *greenhouse, float temperature, int moisture,
+                             bool pump_state, bool valve_state) {
+    // Перед записью проверяем ротацию
+    file_logger_rotate_logs_if_needed(greenhouse);
+
+    const char *dev = (greenhouse && strlen(greenhouse) > 0) ? greenhouse : CONFIG_DEVICE_NAME;
+    time_t now = time(NULL);
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
+    char filename[64];
+    snprintf(filename, sizeof(filename), "/spiffs/%s_%d_%d_%d.txt",
+             dev, tm_info.tm_mday, tm_info.tm_mon + 1, tm_info.tm_year + 1900);
+
+    FILE *f = fopen(filename, "a");
+    if (!f) {
+        ESP_LOGE(TAG, "Cannot append to %s", filename);
+        return;
+    }
+    char time_str[9];
+    strftime(time_str, sizeof(time_str), "%H:%M:%S", &tm_info);
+    char date_str[11];
+    strftime(date_str, sizeof(date_str), "%Y-%m-%d", &tm_info);
+    fprintf(f, "%s;%s %s;%.1f;%.1f;%d;%d\n",
+            dev, date_str, time_str,
+            (float)moisture,
+            temperature,
+            pump_state ? 1 : 0,
+            valve_state ? 1 : 0);
+    fclose(f);
+    ESP_LOGD(TAG, "Appended data to %s", filename);
+}
+
+void file_logger_log_event(const char *greenhouse, const char *component, const char *state) {
+    const char *dev = (greenhouse && strlen(greenhouse) > 0) ? greenhouse : CONFIG_DEVICE_NAME;
+    time_t now = time(NULL);
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
+    char filename[64];
+    snprintf(filename, sizeof(filename), "/spiffs/%s_%d_%d_%d.txt",
+             dev, tm_info.tm_mday, tm_info.tm_mon + 1, tm_info.tm_year + 1900);
+    FILE *f = fopen(filename, "a");
+    if (!f) {
+        ESP_LOGE(TAG, "Cannot append event to %s", filename);
+        return;
+    }
+    char time_str[9];
+    strftime(time_str, sizeof(time_str), "%H:%M:%S", &tm_info);
+    char date_str[11];
+    strftime(date_str, sizeof(date_str), "%Y-%m-%d", &tm_info);
+    fprintf(f, "%s;%s %s;EVENT;%s;%s\n",
+            dev, date_str, time_str, component, state);
+    fclose(f);
+    ESP_LOGD(TAG, "Event logged: %s %s %s", dev, component, state);
 }

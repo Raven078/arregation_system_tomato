@@ -9,6 +9,7 @@ idf_component_register(
         file_logger.c
         command_server.c
         data_sender.c
+        button.c
     INCLUDE_DIRS "."
     REQUIRES 
         nvs_flash

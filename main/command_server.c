@@ -1,16 +1,20 @@
 #include "command_server.h"
 #include "motor_control.h"
 #include "data_sender.h"
+#include "sensors.h"
+#include "irrigation_logic.h"
+#include "file_logger.h"
 #include "esp_log.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include <string.h>
-#include <unistd.h>
+#include <stdlib.h>
 #include "sdkconfig.h"
 
 static const char *TAG = "CMD_SERVER";
 #define COMMAND_PORT CONFIG_COMMAND_PORT
 #define MAX_CLIENTS 1
+#define DEVICE_NAME CONFIG_DEVICE_NAME
 
 static void handle_command(int sock) {
     char rx_buffer[64];
@@ -20,32 +24,66 @@ static void handle_command(int sock) {
     rx_buffer[strcspn(rx_buffer, "\r\n")] = 0;
 
     ESP_LOGI(TAG, "Received command: %s", rx_buffer);
-
     const char *response = "OK\n";
+
     if (strcmp(rx_buffer, "pump_on") == 0) {
-        motor_pump_set_speed(100);
-        ESP_LOGI(TAG, "Pump turned ON");
+        sensor_data_t data = sensors_read();
+        if (data.level2 != 1) {
+            ESP_LOGW(TAG, "Cannot turn pump ON: no water (level2=%d)", data.level2);
+            file_logger_log_event(DEVICE_NAME, "pump", "off");
+            response = "ERROR: No water\n";
+        } else {
+            motor_pump_start();
+            irrigation_logic_set_pump_state(true);
+            ESP_LOGI(TAG, "Pump turned ON (manual, speed %d%%)", motor_pump_get_speed());
+            data_sender_check_events(data.level1, data.level2, true, irrigation_logic_is_valve_active());
+            response = "OK\n";
+        }
     } else if (strcmp(rx_buffer, "pump_off") == 0) {
         motor_pump_stop();
-        ESP_LOGI(TAG, "Pump turned OFF");
+        irrigation_logic_set_pump_state(false);
+        ESP_LOGI(TAG, "Pump turned OFF (manual)");
+        sensor_data_t data = sensors_read();
+        data_sender_check_events(data.level1, data.level2, false, irrigation_logic_is_valve_active());
+        response = "OK\n";
     } else if (strcmp(rx_buffer, "valve_open") == 0) {
-        motor_valve_open();
-        ESP_LOGI(TAG, "Valve opened");
+        sensor_data_t data = sensors_read();
+        if (data.level1 == 1) {
+            ESP_LOGW(TAG, "Cannot open valve: upper level detected (level1=1)");
+            file_logger_log_event(DEVICE_NAME, "valve", "off");
+            response = "ERROR: Tank full\n";
+        } else {
+            motor_valve_open();
+            irrigation_logic_set_valve_state(true);
+            ESP_LOGI(TAG, "Valve opened (manual)");
+            data_sender_check_events(data.level1, data.level2, irrigation_logic_is_pump_active(), true);
+            response = "OK\n";
+        }
     } else if (strcmp(rx_buffer, "valve_close") == 0) {
         motor_valve_close();
-        ESP_LOGI(TAG, "Valve closed");
+        irrigation_logic_set_valve_state(false);
+        ESP_LOGI(TAG, "Valve closed (manual)");
+        sensor_data_t data = sensors_read();
+        data_sender_check_events(data.level1, data.level2, irrigation_logic_is_pump_active(), false);
+        response = "OK\n";
+    } else if (strncmp(rx_buffer, "pump_speed:", 11) == 0) {
+        int speed = atoi(rx_buffer + 11);
+        if (speed < 0) speed = 0;
+        if (speed > 100) speed = 100;
+        motor_pump_set_speed(speed);
+        ESP_LOGI(TAG, "Pump speed set to %d%%", speed);
+        response = "OK\n";
     } else if (strcmp(rx_buffer, "send_data") == 0) {
         data_sender_request_data();
-        ESP_LOGI(TAG, "Data requested");
         response = "DATA_REQUESTED\n";
     } else if (strcmp(rx_buffer, "stop_data") == 0) {
         data_sender_stop_data();
-        ESP_LOGI(TAG, "Data stop requested");
         response = "DATA_STOPPED\n";
     } else {
         response = "ERROR: unknown command\n";
         ESP_LOGW(TAG, "Unknown command: %s", rx_buffer);
     }
+
     send(sock, response, strlen(response), 0);
 }
 
@@ -65,18 +103,21 @@ static void command_server_task(void *pvParameters) {
         .sin_addr.s_addr = htonl(INADDR_ANY),
         .sin_port = htons(COMMAND_PORT)
     };
+
     if (bind(listen_sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
         ESP_LOGE(TAG, "Bind failed");
         close(listen_sock);
         vTaskDelete(NULL);
         return;
     }
+
     if (listen(listen_sock, MAX_CLIENTS) != 0) {
         ESP_LOGE(TAG, "Listen failed");
         close(listen_sock);
         vTaskDelete(NULL);
         return;
     }
+
     ESP_LOGI(TAG, "Command server started on port %d", COMMAND_PORT);
 
     while (1) {

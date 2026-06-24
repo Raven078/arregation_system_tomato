@@ -485,7 +485,7 @@ CONFIG_IDF_TARGET_ARCH="riscv"
 # default:
 CONFIG_IDF_TARGET="esp32c3"
 # default:
-CONFIG_IDF_INIT_VERSION="$IDF_INIT_VERSION"
+CONFIG_IDF_INIT_VERSION="6.2.0"
 # default:
 CONFIG_IDF_TARGET_ESP32C3=y
 # default:
@@ -827,11 +827,24 @@ CONFIG_DEVICE_NAME="pomodoro"
 CONFIG_COMMAND_PORT=8889
 # default:
 CONFIG_MOISTURE_THRESHOLD_PERCENT=60
-# default:
-CONFIG_DRY_MV=100
-# default:
-CONFIG_WET_MV=100
+CONFIG_DRY_MV=2785
+CONFIG_WET_MV=1500
 # end of Client Configuration
+
+#
+# Motor Control Configuration
+#
+CONFIG_PUMP_PWM_GPIO=6
+# default:
+CONFIG_PUMP_IN1_GPIO=7
+CONFIG_VALVE_GPIO=8
+# end of Motor Control Configuration
+
+#
+# Button Configuration
+#
+CONFIG_BUTTON_GPIO=10
+# end of Button Configuration
 
 #
 # Compiler options

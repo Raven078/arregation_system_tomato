@@ -36,27 +36,113 @@ menu "Client Configuration"
         help
             Port on which the device listens for commands from the server.
 
-    config MOISTURE_THRESHOLD_PERCENT
-        int "Moisture threshold for pump activation (%)"
-        default 60
-        range 0 100
+endmenu
+
+menu "Motor Control Configuration"
+
+    config PUMP_PWM_GPIO
+        int "GPIO for pump PWM (ENA)"
+        default 6
+        range 0 21
         help
-            Soil moisture level below which the pump may be activated.
+            GPIO pin for PWM speed control of the pump.
+
+    config PUMP_IN1_GPIO
+        int "GPIO for pump enable (IN1)"
+        default 7
+        range 0 21
+        help
+            GPIO pin that turns the pump ON (HIGH) or OFF (LOW).
+
+    config VALVE_GPIO
+        int "GPIO for valve control (IN3)"
+        default 4
+        range 0 21
+        help
+            GPIO pin to open (HIGH) or close (LOW) the valve.
+
+endmenu
+
+menu "Button Configuration"
+
+    config BUTTON_GPIO
+        int "GPIO for reset button"
+        default 10
+        range 0 21
+        help
+            GPIO pin connected to a button that will restart the ESP32-C3.
+
+endmenu
+
+menu "calibration of humidity sensors"
 
     config DRY_MV
         int "Dry value (ADC) for HW-390"
-        default 80
-        range 0 100
+        default 2785
+        range 0 3300
         help
-            Raw ADC reading (0-100) corresponding to dry soil. 
-            Note: This is not actual millivolts, but a scaled value (0-100) from the sensor.
+            Raw ADC reading in millivolts (0–3300 mV) corresponding to dry soil.
+            This value should be greater than WET_MV because the sensor output
+            voltage decreases as moisture increases.
 
     config WET_MV
         int "Wet value (ADC) for HW-390"
-        default 50
+        default 1320
+        range 0 3300
+        help
+            Raw ADC reading in millivolts (0–3300 mV) corresponding to wet soil.
+            This value should be less than DRY_MV.
+endmenu
+
+menu "Irrigation Control Configuration"
+
+    config MOISTURE_THRESHOLD
+        int "Moisture threshold (%) for automatic pump start"
+        default 70
         range 0 100
         help
-            Raw ADC reading (0-100) corresponding to wet soil.
-            Note: This is not actual millivolts, but a scaled value (0-100) from the sensor.
+            If moisture is below this value and other conditions are met, pump starts automatically.
+
+    config PUMP_START_HOUR
+        int "Pump start hour (24h format)"
+        default 7
+        range 0 23
+        help
+            Hour from which automatic pump operation is allowed.
+
+    config PUMP_END_HOUR
+        int "Pump end hour (24h format)"
+        default 11
+        range 0 23
+        help
+            Hour until which automatic pump operation is allowed.
+
+    config PUMP_STOP_DELAY_AFTER_NO_WATER
+        int "Delay (seconds) to stop pump after no water detected (level2=0)"
+        default 10
+        range 1 60
+        help
+            Time to wait after level2 becomes 0 before stopping the pump (debounce).
+
+    config MAX_PUMP_RUN_TIME
+        int "Maximum pump run time (minutes)"
+        default 10
+        range 1 120
+        help
+            Maximum continuous run time for the pump. After this time, pump will stop automatically.
+
+    config VALVE_OPEN_DELAY_AFTER_PUMP_STOP
+        int "Delay (seconds) to open valve after pump stops"
+        default 30
+        range 0 120
+        help
+            Time to wait after pump stops before opening the valve.
+
+    config LEVEL_DEBOUNCE_DELAY
+        int "Debounce delay (seconds) for level sensors"
+        default 5
+        range 1 20
+        help
+            Time to wait before sending level change events to avoid false triggers.
 
 endmenu

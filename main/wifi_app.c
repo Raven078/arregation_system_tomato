@@ -10,6 +10,9 @@
 #include "freertos/event_groups.h"
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
+#include <sys/time.h>
+#include "data_sender.h"   // <-- ДОБАВЛЕНО
 
 static const char *TAG = "WiFi";
 static EventGroupHandle_t wifi_event_group;
@@ -113,6 +116,36 @@ void wifi_send_command_port(void) {
     if (connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == 0) {
         send(sock, port_msg, strlen(port_msg), 0);
         ESP_LOGI(TAG, "Command port %d sent to server", COMMAND_PORT);
+        // Читаем ответ (время)
+        char time_buf[32];
+        int len = recv(sock, time_buf, sizeof(time_buf) - 1, 2000);
+        if (len > 0) {
+            time_buf[len] = '\0';
+            char *newline = strchr(time_buf, '\n');
+            if (newline) *newline = '\0';
+            char *cr = strchr(time_buf, '\r');
+            if (cr) *cr = '\0';
+            ESP_LOGI(TAG, "Received time from server: %s", time_buf);
+            struct tm tm = {0};
+            if (sscanf(time_buf, "%d.%d.%d %d:%d:%d",
+                       &tm.tm_mday, &tm.tm_mon, &tm.tm_year,
+                       &tm.tm_hour, &tm.tm_min, &tm.tm_sec) == 6) {
+                tm.tm_mon -= 1;
+                tm.tm_year -= 1900;
+                time_t t = mktime(&tm);
+                struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
+                settimeofday(&tv, NULL);
+                ESP_LOGI(TAG, "System time set to: %s", time_buf);
+                // === НОВЫЙ ВЫЗОВ ===
+                data_sender_check_and_create_log();
+            } else {
+                ESP_LOGW(TAG, "Failed to parse time: %s", time_buf);
+            }
+        } else {
+            ESP_LOGW(TAG, "No time response from server");
+        }
+    } else {
+        ESP_LOGE(TAG, "Connect to server failed");
     }
     close(sock);
 }
