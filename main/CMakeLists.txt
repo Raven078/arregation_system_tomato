@@ -1,5 +1,34 @@
 idf_component_register(
-    SRCS "sensors.c" "wifi_app.c" "main.c"
+    SRCS 
+        main.c 
+        sensors.c 
+        wifi_app.c
+        time_manager.c
+        motor_control.c
+        irrigation_logic.c
+        file_logger.c
+        command_server.c
+        data_sender.c
+        button.c
+        log_stream.c
+        ota_recovery.c
     INCLUDE_DIRS "."
-    REQUIRES esp_driver_gpio esp_adc onewire_bus ds18b20 nvs_flash esp_wifi esp_netif esp_event lwip cjson
+    REQUIRES 
+        nvs_flash
+        esp_wifi
+        esp_event
+        esp_netif
+        lwip
+        esp_timer
+        cjson
+        onewire_bus
+        ds18b20
+        esp_adc
+        esp_driver_gpio
+        esp_driver_ledc
+        spiffs
+        esp_hw_support
+        esp_system
+        app_update
+        nvs_flash
 )

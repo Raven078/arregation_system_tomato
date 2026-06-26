@@ -1,6 +1,6 @@
 #
 # Automatically generated file. DO NOT EDIT.
-# Espressif IoT Development Framework (ESP-IDF) 6.1.0 Project Configuration
+# Espressif IoT Development Framework (ESP-IDF) 6.2.0 Project Configuration
 #
 # default:
 CONFIG_SOC_ADC_SUPPORTED=y
@@ -485,7 +485,7 @@ CONFIG_IDF_TARGET_ARCH="riscv"
 # default:
 CONFIG_IDF_TARGET="esp32c3"
 # default:
-CONFIG_IDF_INIT_VERSION="6.1.0"
+CONFIG_IDF_INIT_VERSION="6.2.0"
 # default:
 CONFIG_IDF_TARGET_ESP32C3=y
 # default:
@@ -765,24 +765,16 @@ CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 # CONFIG_ESPTOOLPY_FLASHFREQ_20M is not set
 # default:
 CONFIG_ESPTOOLPY_FLASHFREQ="80m"
-# default:
 # CONFIG_ESPTOOLPY_FLASHSIZE_1MB is not set
-# default:
-CONFIG_ESPTOOLPY_FLASHSIZE_2MB=y
-# default:
-# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set
-# default:
+# CONFIG_ESPTOOLPY_FLASHSIZE_2MB is not set
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 # CONFIG_ESPTOOLPY_FLASHSIZE_8MB is not set
-# default:
 # CONFIG_ESPTOOLPY_FLASHSIZE_16MB is not set
-# default:
 # CONFIG_ESPTOOLPY_FLASHSIZE_32MB is not set
-# default:
 # CONFIG_ESPTOOLPY_FLASHSIZE_64MB is not set
-# default:
 # CONFIG_ESPTOOLPY_FLASHSIZE_128MB is not set
 # default:
-CONFIG_ESPTOOLPY_FLASHSIZE="2MB"
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
 # default:
 # CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE is not set
 # default:
@@ -804,20 +796,15 @@ CONFIG_ESPTOOLPY_MONITOR_BAUD=115200
 #
 # Partition Table
 #
-# default:
-CONFIG_PARTITION_TABLE_SINGLE_APP=y
-# default:
+# CONFIG_PARTITION_TABLE_SINGLE_APP is not set
 # CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE is not set
-# default:
 # CONFIG_PARTITION_TABLE_TWO_OTA is not set
-# default:
 # CONFIG_PARTITION_TABLE_TWO_OTA_LARGE is not set
-# default:
-# CONFIG_PARTITION_TABLE_CUSTOM is not set
+CONFIG_PARTITION_TABLE_CUSTOM=y
 # default:
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # default:
-CONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
 # default:
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
 # default:
@@ -825,10 +812,8 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
-# WiFi TCP Configuration
+# Client Configuration
 #
-# default:
-CONFIG_DEVICE_NAME="Теплица помидорник"
 # default:
 CONFIG_WIFI_SSID="ESP32_S3_Display"
 # default:
@@ -838,8 +823,73 @@ CONFIG_TCP_SERVER_IP="192.168.4.1"
 # default:
 CONFIG_TCP_SERVER_PORT=8888
 # default:
-CONFIG_SENSOR_READ_INTERVAL_SEC=10
-# end of WiFi TCP Configuration
+CONFIG_DEVICE_NAME="pomodoro"
+# default:
+CONFIG_COMMAND_PORT=8889
+# end of Client Configuration
+
+#
+# Motor Control Configuration
+#
+# default:
+CONFIG_PUMP_PWM_GPIO=6
+# default:
+CONFIG_PUMP_IN1_GPIO=7
+# default:
+CONFIG_VALVE_GPIO=4
+# default:
+CONFIG_PUMP_SPEED=70
+# end of Motor Control Configuration
+
+#
+# Button Configuration
+#
+# default:
+CONFIG_BUTTON_GPIO=10
+# end of Button Configuration
+
+#
+# calibration of humidity sensors
+#
+# default:
+CONFIG_DRY_MV=2785
+# default:
+CONFIG_WET_MV=1320
+# end of calibration of humidity sensors
+
+#
+# Irrigation Control Configuration
+#
+# default:
+CONFIG_MOISTURE_THRESHOLD=70
+# default:
+CONFIG_PUMP_START_HOUR=7
+CONFIG_PUMP_END_HOUR=18
+# default:
+CONFIG_PUMP_STOP_DELAY_AFTER_NO_WATER=10
+# default:
+CONFIG_MAX_PUMP_RUN_TIME=10
+# default:
+CONFIG_VALVE_OPEN_DELAY_AFTER_PUMP_STOP=30
+# default:
+CONFIG_LEVEL_DEBOUNCE_DELAY=5
+# end of Irrigation Control Configuration
+
+#
+# BLE Configuration
+#
+# default:
+# CONFIG_BLE_ENABLE is not set
+# end of BLE Configuration
+
+#
+# Remote Control Configuration
+#
+# default:
+CONFIG_LOG_STREAM_PORT=8890
+# default:
+CONFIG_OTA_RECOVERY_PORT=8891
+# end of Remote Control Configuration
 
 #
 # Compiler options
@@ -1690,6 +1740,12 @@ CONFIG_ESP_CONSOLE_UART_NUM=0
 CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM=0
 # default:
 CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+# default:
+# CONFIG_ESP_STDIO_BASIC_MODE is not set
+# default:
+CONFIG_ESP_STDIO_MAX_FDS=16
+# default:
+CONFIG_ESP_STDIO_MAX_VFS_ENTRIES=2
 # end of ESP-STDIO
 
 #
@@ -1888,6 +1944,8 @@ CONFIG_ESP_WIFI_WPA3_COMPATIBLE_SUPPORT=y
 # default:
 CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_SOFTAP=y
 # default:
+# CONFIG_ESP_WIFI_PASN_SUPPORT is not set
+# default:
 # CONFIG_ESP_WIFI_SLP_IRAM_OPT is not set
 # default:
 CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME=50
@@ -1951,6 +2009,8 @@ CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=y
 # CONFIG_ESP_WIFI_ENT_FREE_DYNAMIC_BUFFER is not set
 # default:
 # CONFIG_ESP_WIFI_PASSIVE_HIDDEN_AP_SUPPORT is not set
+# default:
+# CONFIG_ESP_WIFI_PRIVACY_ENHANCEMENTS_ENABLED is not set
 # end of Wi-Fi
 
 #
@@ -2057,6 +2117,8 @@ CONFIG_WIFI_RMT_WPA3_COMPATIBLE_SUPPORT=y
 # default:
 CONFIG_WIFI_RMT_ENABLE_WPA3_OWE_SOFTAP=y
 # default:
+# CONFIG_WIFI_RMT_PASN_SUPPORT is not set
+# default:
 # CONFIG_WIFI_RMT_SLP_IRAM_OPT is not set
 # default:
 CONFIG_WIFI_RMT_SLP_DEFAULT_MIN_ACTIVE_TIME=50
@@ -2116,6 +2178,8 @@ CONFIG_WIFI_RMT_ENTERPRISE_SUPPORT=y
 # CONFIG_WIFI_RMT_ENT_FREE_DYNAMIC_BUFFER is not set
 # default:
 # CONFIG_WIFI_RMT_PASSIVE_HIDDEN_AP_SUPPORT is not set
+# default:
+# CONFIG_WIFI_RMT_PRIVACY_ENHANCEMENTS_ENABLED is not set
 # end of Wi-Fi configuration
 
 # default:
@@ -2960,8 +3024,6 @@ CONFIG_MBEDTLS_KEY_EXCHANGE_ELLIPTIC_CURVE=y
 CONFIG_MBEDTLS_KEY_EXCHANGE_ECDHE_RSA=y
 # default:
 CONFIG_MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA=y
-# default:
-# CONFIG_MBEDTLS_KEY_EXCHANGE_ECJPAKE is not set
 # end of TLS Key Exchange Configuration
 
 # default:
@@ -3062,6 +3124,8 @@ CONFIG_MBEDTLS_ECP_NIST_OPTIM=y
 # CONFIG_MBEDTLS_DHM_C is not set
 # default:
 CONFIG_MBEDTLS_ECDH_C=y
+# default:
+# CONFIG_MBEDTLS_ECJPAKE_C is not set
 # default:
 CONFIG_MBEDTLS_ECDSA_C=y
 # default:
