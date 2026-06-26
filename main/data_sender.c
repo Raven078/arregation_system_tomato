@@ -22,11 +22,11 @@ static float minute_moisture_sum = 0;
 static float minute_temp_sum = 0;
 static int minute_readings_count = 0;
 static esp_timer_handle_t minute_timer = NULL;
-static esp_timer_handle_t file_timer = NULL;
 static float last_avg_moisture = 0;
 static float last_avg_temp = 0;
 static bool has_avg_data = false;
 static bool data_requested = false;
+static bool auto_task_created = false;   // <-- флаг для однократного создания
 
 static void send_json(const char *json_str) {
     if (json_str && wifi_is_connected()) {
@@ -55,7 +55,6 @@ static char* create_base_json(float moisture_val, float temp_val, int raw_adc,
     cJSON_AddStringToObject(root, "time", time_str);
 
     cJSON *sensors = cJSON_CreateObject();
-
     cJSON *moisture_obj = cJSON_CreateObject();
     cJSON_AddNumberToObject(moisture_obj, "percent", moisture_val);
     cJSON_AddNumberToObject(moisture_obj, "raw", raw_adc);
@@ -110,17 +109,10 @@ static void send_current_data(void) {
     if (json) {
         ESP_LOGI(TAG, "Send current data: %s", json);
         send_json(json);
-        save_to_log(current.moisture_percent, current.temperature,
-                    current.level1, current.level2,
-                    is_pump_running(), is_valve_open());
     }
 }
 
 static void send_averaged_data(void) {
-    if (!data_requested) {
-        ESP_LOGD(TAG, "Data sending disabled, skipping minute send");
-        return;
-    }
     if (!wifi_is_connected()) return;
 
     if (minute_readings_count == 0) {
@@ -145,9 +137,6 @@ static void send_averaged_data(void) {
     if (json) {
         ESP_LOGI(TAG, "Minute averaged JSON: %s", json);
         send_json(json);
-        save_to_log(avg_moisture, avg_temp,
-                    current.level1, current.level2,
-                    is_pump_running(), is_valve_open());
     }
 
     minute_moisture_sum = 0;
@@ -171,7 +160,7 @@ static void minute_timer_callback(void *arg) {
     minute_temp_sum = 0;
     minute_readings_count = 0;
 
-    if (data_requested && has_avg_data) {
+    if (has_avg_data) {
         send_averaged_data();
     }
 
@@ -248,8 +237,26 @@ void data_sender_send_log_file(void) {
     ESP_LOGI(TAG, "Log file sent: %s (%ld bytes)", filename, file_size);
 }
 
-static void file_timer_callback(void *arg) {
-    data_sender_send_log_file();
+static void auto_log_task(void *pvParameters) {
+    ESP_LOGI(TAG, "Auto-log task started");
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(10 * 60 * 1000));
+        ESP_LOGI(TAG, "Auto-log task triggered");
+        if (has_avg_data) {
+            sensor_data_t current = sensors_read();
+            save_to_log(last_avg_moisture, last_avg_temp,
+                        current.level1, current.level2,
+                        is_pump_running(), is_valve_open());
+            ESP_LOGI(TAG, "Logged 10-min average: T=%.2f, H=%.1f%%", last_avg_temp, last_avg_moisture);
+        } else {
+            ESP_LOGW(TAG, "No averaged data, using current values");
+            sensor_data_t current = sensors_read();
+            save_to_log(current.moisture_percent, current.temperature,
+                        current.level1, current.level2,
+                        is_pump_running(), is_valve_open());
+        }
+        data_sender_send_log_file();
+    }
 }
 
 void data_sender_check_and_create_log(void) {
@@ -272,15 +279,10 @@ void data_sender_check_and_create_log(void) {
     data_sender_send_log_file();
 }
 
-static void single_file_timer_cb(void *arg) {
-    data_sender_send_log_file();
-    esp_timer_start_periodic(file_timer, 10 * 60 * 1000000LL);
-    ESP_LOGI(TAG, "File timer started periodic (10 min)");
-}
-
 void data_sender_init(void) {
     sensors_get_device_id(device_id, sizeof(device_id));
 
+    // Минутный таймер
     const esp_timer_create_args_t minute_args = {
         .callback = minute_timer_callback,
         .name = "minute_timer"
@@ -293,36 +295,16 @@ void data_sender_init(void) {
     if (next_sec == 60) next_sec = 0;
     esp_timer_start_once(minute_timer, next_sec * 1000000LL);
 
-    const esp_timer_create_args_t file_args = {
-        .callback = file_timer_callback,
-        .name = "file_timer"
-    };
-    esp_timer_create(&file_args, &file_timer);
-
-    struct tm tm_file;
-    localtime_r(&now, &tm_file);
-    int current_minute = tm_file.tm_min;
-    int current_second = tm_file.tm_sec;
-    int next_minute = ((current_minute / 10) + 1) * 10;
-    if (next_minute >= 60) next_minute = 0;
-    int delay_minutes = next_minute - current_minute;
-    if (delay_minutes < 0) delay_minutes += 60;
-    int delay_seconds = delay_minutes * 60 - current_second;
-    if (delay_seconds < 0) delay_seconds += 60;
-
-    static esp_timer_handle_t single_timer = NULL;
-    if (single_timer) {
-        esp_timer_stop(single_timer);
-        esp_timer_delete(single_timer);
+    // Создаём задачу только один раз
+    if (!auto_task_created) {
+        xTaskCreate(auto_log_task, "auto_log_task", 4096, NULL, 3, NULL);
+        auto_task_created = true;
+        ESP_LOGI(TAG, "Auto-log task created");
+    } else {
+        ESP_LOGI(TAG, "Auto-log task already created, skipping");
     }
-    const esp_timer_create_args_t single_args = {
-        .callback = single_file_timer_cb,
-        .name = "single_file_timer"
-    };
-    esp_timer_create(&single_args, &single_timer);
-    esp_timer_start_once(single_timer, (uint64_t)delay_seconds * 1000000LL);
-    ESP_LOGI(TAG, "File timer started, first send in %d seconds (at %02d:%02d:00)",
-             delay_seconds, next_minute / 60, next_minute % 60);
+
+    data_sender_check_and_create_log();
 }
 
 void data_sender_accumulate(float moisture, float temp) {
@@ -332,11 +314,6 @@ void data_sender_accumulate(float moisture, float temp) {
 }
 
 void data_sender_check_events(int level1, int level2, bool pump_running, bool valve_open) {
-    if (!data_requested) {
-        ESP_LOGD(TAG, "Events not sent because data stream inactive");
-        return;
-    }
-
     const char *pump_state = pump_running ? "on" : "off";
     const char *valve_state = valve_open ? "on" : "off";
     bool changed = false;
@@ -352,7 +329,6 @@ void data_sender_check_events(int level1, int level2, bool pump_running, bool va
                                        current.raw_adc, current.voltage_mV,
                                        level1, level2, pump_state, valve_state, speed);
         if (json) {
-            ESP_LOGI(TAG, "Instant JSON (event): %s", json);
             send_json(json);
             save_to_log(current.moisture_percent, current.temperature,
                         level1, level2, pump_running, valve_open);

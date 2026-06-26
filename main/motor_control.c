@@ -18,7 +18,7 @@ static const char *TAG = "MotorControl";
 
 static bool pump_running = false;
 static bool valve_open = false;
-static int current_speed = 30;
+static int current_speed = CONFIG_PUMP_SPEED;
 
 void motor_control_init(void) {
     // === ШИМ для насоса (ENA) ===

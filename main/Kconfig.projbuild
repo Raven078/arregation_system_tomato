@@ -61,6 +61,14 @@ menu "Motor Control Configuration"
         help
             GPIO pin to open (HIGH) or close (LOW) the valve.
 
+     config PUMP_SPEED
+        int "Default pump speed (%)"
+        default 70
+        range 0 100
+        help
+            Default speed of the pump in percent (0-100).
+            This value is used at startup and if not changed by command.
+
 endmenu
 
 menu "Button Configuration"

@@ -35,9 +35,11 @@ void irrigation_logic_set_pump_state(bool active) {
     if (active) {
         pump_start_tick = xTaskGetTickCount();
         ESP_LOGI(TAG, "Pump state set to active (manual)");
+        file_logger_log_event(DEVICE_NAME, "pump", "on");
     } else {
         pump_stop_tick = xTaskGetTickCount();
         ESP_LOGI(TAG, "Pump state set to inactive (manual)");
+        file_logger_log_event(DEVICE_NAME, "pump", "off");
     }
 }
 
@@ -45,8 +47,10 @@ void irrigation_logic_set_valve_state(bool active) {
     valve_active = active;
     if (active) {
         ESP_LOGI(TAG, "Valve state set to active (manual)");
+        file_logger_log_event(DEVICE_NAME, "valve", "on");
     } else {
         ESP_LOGI(TAG, "Valve state set to inactive (manual)");
+        file_logger_log_event(DEVICE_NAME, "valve", "off");
     }
 }
 

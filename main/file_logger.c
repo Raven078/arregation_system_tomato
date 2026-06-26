@@ -329,13 +329,21 @@ void file_logger_get_pump_valve_data(int32_t **pump_array, int32_t **valve_array
     *point_count = chart_point_count;
 }
 
+// Исходная функция (без времени) – оставляем для совместимости, использует текущее время
 void file_logger_append_data(const char *greenhouse, float temperature, int moisture,
                              bool pump_state, bool valve_state) {
+    file_logger_append_data_with_time(greenhouse, temperature, moisture,
+                                      pump_state, valve_state, time(NULL));
+}
+
+// Новая функция с произвольным временем
+void file_logger_append_data_with_time(const char *greenhouse, float temperature, int moisture,
+                                       bool pump_state, bool valve_state, time_t custom_time) {
     // Перед записью проверяем ротацию
     file_logger_rotate_logs_if_needed(greenhouse);
 
     const char *dev = (greenhouse && strlen(greenhouse) > 0) ? greenhouse : CONFIG_DEVICE_NAME;
-    time_t now = time(NULL);
+    time_t now = (custom_time != 0) ? custom_time : time(NULL);
     struct tm tm_info;
     localtime_r(&now, &tm_info);
     char filename[64];
@@ -360,7 +368,7 @@ void file_logger_append_data(const char *greenhouse, float temperature, int mois
              valve_state ? 1 : 0);
     fprintf(f, "%s", log_line);
     fclose(f);
-    ESP_LOGD(TAG, "Appended data to %s", filename);
+    ESP_LOGD(TAG, "Appended data with custom time to %s", filename);
 }
 
 void file_logger_log_event(const char *greenhouse, const char *component, const char *state) {
